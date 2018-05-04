@@ -14,9 +14,7 @@ BEST WORKING CODE
 '''
 
 # define values boundaries for color
-lower_yellow = np.array([15,50,100],np.uint8)
-#lower_yellow = np.array([40,255,255],np.uint8)
-
+lower_yellow = np.array([15,40,100],np.uint8)
 upper_yellow = np.array([40,255,255],np.uint8)
 # lower_white_hsv = np.array([0, 0, 150], np.uint8)
 lower_white_hsv = np.array([0,0,120], np.uint8)
@@ -36,11 +34,70 @@ outlier_count = 0
 x_waypoint_buffer = []
 y_waypoint_buffer = []
 
+def findConfidence(below_200, below_100, nolane, linearfit, small_data, previous_coeff):
+    if (not below_200):
+        if (previous_coeff):
+            conf1 = 7
+        else:
+            conf1 = 10
+    else:
+        conf1 = 5
+    
+    if below_100:
+        if below_200:
+            conf2 = 5
+        else:
+            conf2 = 8
+    else:
+        conf2 = 10
+    
+    if nolane:
+        conf3 = 3
+    else:
+        conf3 = 10
+    
+    if linearfit:
+        conf4 = 8
+    else:
+        conf4 = 10
+    
+    if small_data:
+        conf5 = 5
+    else:
+        conf5 = 10
+    confidence = np.array([conf1, conf2, conf3, conf4, conf5])
+    print(confidence)
+    confidence_val = np.min(confidence)
+    return confidence_val
+
+def calculate_rsquared(x, y, f):
+    yhat = f(x)
+    print(len(x))
+    if (len(y) != 0): 
+        ybar = np.sum(y)/len(y)
+        error = y - yhat
+        error[error<10] = 0
+        error = np.sum(error)
+        ssreg = (error**2)
+        sstot = np.sum((y-ybar)**2)
+        rsquared = 1-(ssreg/sstot)
+    else:
+        rsquared = 0
+    return rsquared
+
 def imagecallback(msg):
     global coeff_buffer
     global outlier_count
     global x_waypoint_buffer
     global y_waypoint_buffer
+    # INIT booleans to determine confidence!
+    rsquared_below_200 = False
+    rsquared_below_100 = False
+    no_lane = False
+    linearfit = False
+    small_data = False
+    use_previous_coeff = False
+
     img = bridge.imgmsg_to_cv2(msg, "bgr8")
     init_time = time.time()
     img = GaussianBlur(img, 5)
@@ -49,42 +106,17 @@ def imagecallback(msg):
     yellow_mask = findColor(hsv_img, lower_yellow, upper_yellow)
     kernel = np.ones((9,9),np.uint8)
     yellow_mask = cv2.morphologyEx(yellow_mask, cv2.MORPH_OPEN, kernel)
-    # Split into two to obtain max contour
-    yellow_mask_1 = yellow_mask[:, 0:300]
-    yellow_mask_2 = yellow_mask[:,300:600]
-    # edges = CannyEdge(img, 100, 200)
-    # lines = Hough(edges)
-
-    # Get CONTOUR of masked image to filter out small blobs
-
-    _,contours1, _ = cv2.findContours(yellow_mask_1, 1,2)
-    _,contours2, _ = cv2.findContours(yellow_mask_2, 1,2)
-    # create new mask images
-    new_mask = np.zeros((600,600), dtype=np.uint8)
-    new_mask_temp = np.zeros((600,300), dtype=np.uint8)
-    if(len(contours1)!=0):
-        max_cont_1 = contours1[0]
-        max_area1 = 0
-        max_index1=0
-        for i in range(0,len(contours1)):
-            area = cv2.contourArea(contours1[i])
-            if (area > max_area1):
-                max_area1 = area
-                max_index1 = i
-        # fill in
-        cv2.drawContours(new_mask, contours1, max_index1, (255),cv2.FILLED)
-    if(len(contours2)!=0):
-        max_cont_2 = contours2[0]
-        max_area2 = 0
-        max_index2=0
-        for i in range(0,len(contours2)):
-            area = cv2.contourArea(contours2[i])
-            if (area > max_area2):
-                max_area2 = area
-                max_index2 = i
-        cv2.drawContours(new_mask_temp, contours2, max_index2, 255, cv2.FILLED)
-
-    new_mask[:, 300:600]=new_mask_temp
+  
+    # DELETE 1/3 OF MASK
+    new_mask = yellow_mask
+    new_mask[0:200,:] = 0
+    # Lane leaving the image at the bottom seems to be a major issue.
+    # Correct mask image so that y values are cut if lane leaves from bottom
+    lowest_row = new_mask[599,:]
+    lowest_row_indexes = np.where(lowest_row==255)[0]
+    print(lowest_row_indexes)
+    if (len(lowest_row_indexes)!=0):
+        new_mask[540:, np.min(lowest_row_indexes):] = 0
 
     '''
     LINE FITTING
@@ -95,40 +127,78 @@ def imagecallback(msg):
     points_mask = np.where(new_mask>0)
     x_vals = points_mask[1]
     y_vals = points_mask[0]
-    no_lane = False
+
     if (x_vals.size!=0):
-        coefficients = np.polyfit(x_vals, y_vals,2)
-        poly_order = 2
+        # USE LINEAR FITTING IF DATA SIZE IS TOO SMALL
+        if(x_vals.size>2000):
+            coefficients = np.polyfit(x_vals, y_vals,2)
+            poly_order = 2      
+        else:
+            coefficients = np.polyfit(x_vals, y_vals,1)
+            poly_order = 1
+            small_data = True
+            linearfit = True
+
     else:
         coefficients = np.array([0,0])
         poly_order = 1
         no_lane = True
+
     coeff_thresh = 0.002          # Tune value?
     if (abs(coefficients[0])>coeff_thresh):
         coefficients = np.polyfit(x_vals, y_vals,1)
         poly_order = 1
+        linearfit = True
 
-    # FILTERING BASED ON PREVIOUS VALUES
-    if(len(coeff_buffer)<3):
-        coeff_buffer.append(coefficients)
-    else:
-        y_prev_avg = (coeff_buffer[0][-1] + coeff_buffer[1][-1]+coeff_buffer[2][-1])/3
-        if(abs(y_prev_avg - coefficients[-1]) >100):
-            coefficients = coeff_buffer[2]
-            outlier_count +=1
-            if(outlier_count >10):
-                outlier_count=0
-                coeff_buffer = []
-
-        else:
-            coeff_buffer[0:-1] = coeff_buffer[1:3]
-            coeff_buffer[2]=coefficients
+    # CALCULATE R-SQUARED FOR CONFIDENCE
 
     # CREATE FITTING, DRAW ON IMAGE
     polypoints = np.zeros((600,2))
     polypoints_right = np.zeros((600,2))
     t = np.arange(0,600,1)
     f = np.poly1d(coefficients)
+
+    # CALCULATE R-SQUARED FOR CONFIDENCE
+    rsquared = calculate_rsquared(x_vals, y_vals, f)
+
+    if(rsquared<-100):
+        rsquared_below_100 = True
+    if (rsquared<-200):
+        rsquared_below_200 = True
+
+
+    # FILTERING BASED ON PREVIOUS VALUES
+    if(len(coeff_buffer)<3):
+        coeff_buffer.append(coefficients)
+    else:
+        y_prev_avg = (coeff_buffer[0][-1] + coeff_buffer[1][-1]+coeff_buffer[2][-1])/3
+        if (abs(y_prev_avg - coefficients[-1]) >70) or (rsquared < -200):
+            coefficients = coeff_buffer[2]
+            outlier_count +=1
+
+            use_previous_coeff = True
+                
+            if(outlier_count >10):
+                outlier_count=0
+                coeff_buffer = []
+                use_previous_coeff = True
+               
+        else:
+            coeff_buffer[0:-1] = coeff_buffer[1:3]
+            coeff_buffer[2]=coefficients
+            outlier_count = 0
+      
+    print("Outlier count: ", outlier_count)
+    f = 0
+    f = np.poly1d(coefficients)
+    rsquared = calculate_rsquared(x_vals, y_vals, f)
+
+    if(rsquared<-200):
+        rsquared_below_200 = True
+
+    print("coefficients: ", coefficients)
+    print("R squared = ", rsquared)
+
     if(coefficients.size ==3):      # if 2nd order
         slopes = t*coefficients[0]*2 + coefficients[1]
     else:
@@ -202,17 +272,21 @@ def imagecallback(msg):
     M = cv2.getRotationMatrix2D((100,100),180,1)
 
     masked_img = cv2.warpAffine(masked_img,M,(200,200))
-
     send_img = bridge.cv2_to_imgmsg(masked_img, "mono8")
     pub.publish(send_img)
+
+    confidence = findConfidence(rsquared_below_200, rsquared_below_100, no_lane,
+                                linearfit, small_data, use_previous_coeff)
+
     laneinfo.x_waypoint = x_waypoint/100.
     laneinfo.y_waypoint = y_waypoint/100. - 3       # subtract by y=3m offset
-    laneinfo.confidence = 10
+    laneinfo.confidence = confidence
     pub_waypoint.publish(laneinfo)
 
     # add to buffer
     print("x point:", x_waypoint)
     print("y point:", y_waypoint)
+    print("Confidence: ", confidence)
 
     print("Time: ", time.time()-init_time)
     cv2.imshow('img', img)

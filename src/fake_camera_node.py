@@ -27,7 +27,7 @@ def imagePublisher():
 
     while not rospy.is_shutdown():
         
-        path = '/home/dongwan/7/' + str(count) + '.jpg'
+        path = '/home/dongwan/park1/' + str(count) + '.jpg'
         summed_image = cv2.imread(path)
         cv2.imshow('summed_image', summed_image)
         summed_image = bridge.cv2_to_imgmsg(summed_image, "bgr8")
