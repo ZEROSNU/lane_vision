@@ -31,17 +31,25 @@ def imagePublisher():
         summed_image = cv2.imread(path)
         cv2.imshow('summed_image', summed_image)
         summed_image = bridge.cv2_to_imgmsg(summed_image, "bgr8")
+        
+        key = getKey()
+        if key == 'a':
+            count -=1
+            rospy.loginfo("File number: " + str(count))
+            warp_pub.publish(summed_image)
+        elif key == 'd':
+            count +=1
+            rospy.loginfo("File number: " + str(count))
+            warp_pub.publish(summed_image)
 
-        count +=1
+        # count +=1
         if(count==1707):
             count=0
-        warp_pub.publish(summed_image)
-    
+
         k = cv2.waitKey(1) & 0xFF
         rate.sleep()
         if k ==27:
             break
-        
 
     cv2.destroyAllWindows()
 
@@ -59,7 +67,7 @@ def getKey():
 
 if __name__ == '__main__':
     try:
-        # settings = termios.tcgetattr(sys.stdin)
+        settings = termios.tcgetattr(sys.stdin)
         imagePublisher()
 	#print('sending image')
     except rospy.ROSInterruptException:

@@ -5,7 +5,7 @@ import numpy as np
 from sensor_msgs.msg import Image
 from cv_bridge import CvBridge, CvBridgeError
 import time
-
+import os
 '''
 CAMERA NODE RUNNING AT FULL SPEED
 NO IMAGE RECORDING
@@ -62,7 +62,11 @@ def find_mask(image):
     im_mask= np.dstack((im_mask, im_mask, im_mask))
     return im_mask_inv, im_mask
 
+
 def imagePublisher():
+    current_time = str(time.time())
+    path = "/home/snuzero/"+current_time
+    # os.mkdir(path)
     warp_pub = rospy.Publisher('warped_image', Image, queue_size=1)
     rospy.init_node('camera_node_warp', anonymous=True)
     #rate=rospy.Rate(30)#10hz
@@ -85,6 +89,8 @@ def imagePublisher():
         summed_image = front_masked + left_masked+right_masked
 
         cv2.imshow('warped', summed_image)
+        pathname_warp = path + "/" + str(time.time()) + ".jpg"
+        # cv2.imwrite(pathname_warp, summed_image)
         summed_image = bridge.cv2_to_imgmsg(summed_image, "bgr8")
         rospy.loginfo("images sent")
         print("Time taken: ", time.time() -init_time)

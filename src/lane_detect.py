@@ -37,17 +37,17 @@ y_waypoint_buffer = []
 def findConfidence(below_200, below_100, nolane, linearfit, small_data, previous_coeff):
     if (not below_200):
         if (previous_coeff):
-            conf1 = 7
+            conf1 = 5
         else:
             conf1 = 10
     else:
-        conf1 = 5
+        conf1 = 3
     
     if below_100:
         if below_200:
-            conf2 = 5
+            conf2 = 3
         else:
-            conf2 = 8
+            conf2 = 6
     else:
         conf2 = 10
     
@@ -57,12 +57,12 @@ def findConfidence(below_200, below_100, nolane, linearfit, small_data, previous
         conf3 = 10
     
     if linearfit:
-        conf4 = 8
+        conf4 = 6
     else:
         conf4 = 10
     
     if small_data:
-        conf5 = 5
+        conf5 = 3
     else:
         conf5 = 10
     confidence = np.array([conf1, conf2, conf3, conf4, conf5])
