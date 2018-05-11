@@ -22,7 +22,7 @@ cam_front.set(cv2.CAP_PROP_FOURCC, int(0x47504A4D))
 
 
 current_time = str(time.time())
-path = "/home/dongwan/sign/"+current_time + "/"
+path = "/home/snuzero/sign"+current_time + "/"
 os.mkdir(path)
 # path_left = "../collected_images/"+current_time+"/left"
 # path_right = "../collected_images/"+current_time+"/right"
